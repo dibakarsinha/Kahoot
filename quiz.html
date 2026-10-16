@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14213d;--panel:#1f2f55;--ink:#f6f2e9;--mute:#9fb0d3;--c0:#e8505b;--c1:#2f6fed;--c2:#f2b705;--c3:#1fa97a}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:500 18px/1.35 "Bricolage Grotesque",system-ui,sans-serif;transition:background .3s}
+body[data-tone=ok]{background:#14684e}body[data-tone=bad]{background:#7a2530}
+.s{display:none;min-height:100%;padding:24px;flex-direction:column;gap:16px;max-width:1100px;margin:0 auto}
+.s.on{display:flex}
+h1{font-size:clamp(40px,8vw,72px);font-weight:800;line-height:1}
+h2{font-size:clamp(26px,4vw,44px);font-weight:800;line-height:1.1}
+p,.mute{color:var(--mute)}
+input,textarea,button{font:inherit;border-radius:10px;border:2px solid transparent}
+input,textarea{background:var(--panel);color:var(--ink);padding:14px;width:100%}
+input:focus,textarea:focus,button:focus-visible{outline:3px solid var(--c2)}
+textarea{min-height:260px;font:14px/1.5 ui-monospace,monospace}
+button{background:var(--ink);color:var(--bg);padding:14px 22px;font-weight:800;cursor:pointer}
+button.alt{background:transparent;color:var(--ink);border-color:var(--mute)}
+.err{color:#ff9aa2;min-height:1.3em}
+.center{align-items:center;justify-content:center;text-align:center;flex:1}
+.pin{font-size:clamp(56px,14vw,140px);font-weight:800;letter-spacing:.08em;line-height:1}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.chips span{background:var(--panel);padding:6px 14px;border-radius:99px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.timer{font-size:56px;font-weight:800;background:var(--panel);width:96px;height:96px;border-radius:50%;display:grid;place-items:center}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.t{display:flex;align-items:center;gap:14px;padding:22px;border-radius:12px;font-size:clamp(18px,2.6vw,28px);font-weight:800;color:#fff}
+.t b{font-size:1.2em}.t em{margin-left:auto;font-style:normal;font-size:1.4em}
+.c0{background:var(--c0)}.c1{background:var(--c1)}.c2{background:var(--c2);color:#2a2100}.c3{background:var(--c3)}
+.dim{opacity:.28}
+ol{list-style:none;padding:0;display:grid;gap:8px}
+li{display:flex;justify-content:space-between;background:var(--panel);padding:12px 18px;border-radius:10px;font-weight:800}
+#pq{padding:12px;gap:10px}
+#pq .row{padding:0 6px}
+#pb{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#pb.n2{grid-template-columns:1fr}
+#pb button{font-size:64px;color:#fff;border:0;border-radius:14px;min-height:130px}
+#pb button.c2{color:#2a2100}
+@media(max-width:640px){.tiles{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){body{transition:none}}
+</style>
+</head>
+<body>
+
+<!-- Setup missing -->
+<div id="cfg" class="s"><h2>Add your Firebase config</h2>
+<p>Open this file in a text editor and fill in the <b>CFG</b> object near the bottom with your Firebase web app settings (including databaseURL).</p></div>
+
+<!-- Home -->
+<div id="home" class="s center">
+  <h1>Quiz Live</h1>
+  <div style="width:min(360px,100%);display:grid;gap:10px">
+    <input id="pin" inputmode="numeric" maxlength="6" placeholder="Game PIN" autocomplete="off">
+    <input id="nm" maxlength="16" placeholder="Your nickname" autocomplete="off">
+    <button id="join">Join game</button>
+    <div class="err" id="jerr"></div>
+    <button id="host" class="alt">Host a game</button>
+  </div>
+</div>
+
+<!-- Host: setup -->
+<div id="hsetup" class="s">
+  <h2>Build your quiz</h2>
+  <p>One question per line: <b>Question | option 1 | option 2 | option 3 | option 4 | correct option number | seconds</b>. Use 2 to 4 options. You can paste rows straight from Google Sheets (tab separated).</p>
+  <div class="row" style="gap:8px"><input id="sheet" placeholder="Or paste a Google Sheets link"><button id="load" class="alt" style="white-space:nowrap">Load sheet</button></div>
+  <p id="sheetmsg" style="font-size:15px">Sheet columns, in order: question, option 1-4, correct number, seconds. Share it as "Anyone with the link can view", or use File → Share → Publish to web.</p>
+  <textarea id="quiz">What is the capital of France? | Berlin | Paris | Madrid | Rome | 2 | 20
+Which planet is closest to the Sun? | Venus | Earth | Mercury | Mars | 3 | 20
+2 + 2 x 3 = ? | 12 | 8 | 10 | 6 | 2 | 25
+The Taj Mahal is in which city? | Agra | Delhi | Jaipur | Mumbai | 1 | 15
+Water freezes at 0 degrees Celsius. | True | False | 1 | 10</textarea>
+  <div class="err" id="herr"></div>
+  <div class="row"><button id="create">Create game</button><button class="alt" onclick="show('home')">Back</button></div>
+</div>
+
+<!-- Host: lobby -->
+<div id="hlobby" class="s center">
+  <p>Join at this page with PIN</p>
+  <div class="pin" id="hpin"></div>
+  <h2><span id="hcount">0</span> players</h2>
+  <div class="chips" id="hnames"></div>
+  <button id="hstart">Start game</button>
+</div>
+
+<!-- Host: question -->
+<div id="hq" class="s">
+  <div class="row"><span class="mute" id="hqn"></span><span class="mute" id="hqa"></span></div>
+  <div class="row"><h2 id="hqt"></h2><div class="timer" id="hqc"></div></div>
+  <div class="tiles" id="hqo"></div>
+  <button class="alt" id="hskip" style="align-self:flex-start">Skip to results</button>
+</div>
+
+<!-- Host: reveal -->
+<div id="hrev" class="s">
+  <div class="tiles" id="hro"></div>
+  <h2>Top players</h2>
+  <ol id="hrl"></ol>
+  <button id="hnext" style="align-self:flex-start">Next question</button>
+</div>
+
+<!-- Host: end -->
+<div id="hend" class="s">
+  <h1>Final results</h1>
+  <ol id="hel"></ol>
+  <button onclick="location.reload()" style="align-self:flex-start">New game</button>
+</div>
+
+<!-- Player: message -->
+<div id="pmsg" class="s center">
+  <h1 id="pt"></h1><h2 id="ps" style="font-weight:500"></h2><p id="px"></p>
+</div>
+
+<!-- Player: answer -->
+<div id="pq" class="s">
+  <div class="row"><span class="mute">Pick your answer</span><span class="timer" style="width:56px;height:56px;font-size:28px" id="pc"></span></div>
+  <div id="pb"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+// ====== 1. PASTE YOUR FIREBASE CONFIG HERE ======
+const CFG = {
+  apiKey: "AIzaSyA9hNC_GV1RHgUkjG79cuNlkqO_I6F2Pa4",
+  authDomain: "kahoot-quiz-6fab6.firebaseapp.com",
+  databaseURL: "https://kahoot-quiz-6fab6-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "kahoot-quiz-6fab6",
+  appId: "1:1083493620703:web:fc1c2314f7238b3546426a"
+};
+// ================================================
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SH = ['▲','◆','●','■'];
+function show(id){ document.body.dataset.tone=''; document.querySelectorAll('.s').forEach(e => e.classList.toggle('on', e.id===id)); }
+
+let db, off=0, base, pin, Q, S={}, players={}, ans={}, isHost=false, pid, me={}, mine={}, busy=false;
+const now = () => Date.now() + off;
+const TS = () => firebase.database.ServerValue.TIMESTAMP;
+
+if(!CFG.databaseURL){ show('cfg'); }
+else {
+  firebase.initializeApp(CFG);
+  db = firebase.database();
+  db.ref('.info/serverTimeOffset').on('value', s => off = s.val() || 0);
+  show('home');
+}
+
+/* ---------- HOST ---------- */
+$('host').onclick = () => show('hsetup');
+
+function parse(txt){
+  const out=[];
+  const lines = txt.split('\n').map(l=>l.trim()).filter(Boolean);
+  for(let i=0;i<lines.length;i++){
+    const p = lines[i].split(lines[i].includes('\t')?'\t':'|').map(x=>x.trim());
+    const c=+p[p.length-2], s=+p[p.length-1], o=p.slice(1,-2).filter(Boolean);
+    if(p.length<5||o.length<2||o.length>4||!(c>=1&&c<=o.length)||!(s>=5))
+      return {err:'Line '+(i+1)+' needs a question, 2-4 options, a correct option number, and seconds (5 or more).'};
+    out.push({t:p[0],o,c:c-1,s});
+  }
+  return out.length ? {q:out} : {err:'Add at least one question.'};
+}
+
+function csv(t){
+  const rows=[]; let r=[], c='', q=false;
+  for(let i=0;i<t.length;i++){
+    const ch=t[i];
+    if(q){ if(ch==='"'){ if(t[i+1]==='"'){c+='"';i++;} else q=false; } else c+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===','){ r.push(c); c=''; }
+    else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&t[i+1]==='\n') i++; r.push(c); rows.push(r); r=[]; c=''; }
+    else c+=ch;
+  }
+  if(c||r.length){ r.push(c); rows.push(r); }
+  return rows;
+}
+$('load').onclick = async () => {
+  const m = $('sheetmsg'), url = $('sheet').value.trim();
+  const id = (url.match(/\/d\/(?:e\/)?([\w-]+)/)||[])[1];
+  if(!id){ m.textContent = 'That does not look like a Google Sheets link.'; return; }
+  const gid = (url.match(/gid=(\d+)/)||[])[1];
+  const isPub = /\/d\/e\//.test(url);
+  const src = isPub ? url.replace(/pubhtml.*$/,'pub?output=csv').replace(/(pub\?)(?!.*output=csv).*/,'$1output=csv')
+    : 'https://docs.google.com/spreadsheets/d/'+id+'/gviz/tq?tqx=out:csv'+(gid?'&gid='+gid:'');
+  m.textContent = 'Loading…';
+  try{
+    const res = await fetch(src);
+    if(!res.ok) throw 0;
+    const lines = csv(await res.text()).map(r=>r.map(x=>x.trim().replace(/\|/g,'/')))
+      .filter(r=>r[0] && /^\d+$/.test(r[5]||'') && /^\d+$/.test(r[6]||''))
+      .map(r=>[r[0],...r.slice(1,5).filter(Boolean),r[5],r[6]].join(' | '));
+    if(!lines.length) throw 1;
+    $('quiz').value = lines.join('\n');
+    m.textContent = 'Loaded '+lines.length+' questions. Review them below, then create the game.';
+  }catch(e){
+    m.textContent = e===1 ? 'No valid rows found. Check the column order: question, options 1-4, correct number, seconds.'
+      : 'Could not read the sheet. Set sharing to "Anyone with the link can view" (or publish it to the web) and try again.';
+  }
+};
+
+$('create').onclick = async () => {
+  const r = parse($('quiz').value);
+  if(r.err){ $('herr').textContent = r.err; return; }
+  Q = r.q; isHost = true;
+  do { pin = String(Math.floor(100000+Math.random()*900000)); base = db.ref('g/'+pin); }
+  while((await base.once('value')).exists());
+  await base.set({meta:{state:'lobby',n:Q.length}});
+  base.child('players').on('child_added', s => { players[s.key]=s.val(); if(S.state==='lobby') renderLobby(); });
+  const onAns = s => { ans[s.key]=s.val(); if(S.state==='question') updCount(); };
+  base.child('ans').on('child_added', onAns);
+  base.child('ans').on('child_changed', onAns);
+  base.child('meta').on('value', s => { S = s.val() || {}; hostRender(); });
+  setInterval(tick, 250);
+};
+
+function hostRender(){
+  if(S.state==='lobby'){ show('hlobby'); renderLobby(); }
+  else if(S.state==='question') showQ();
+  else if(S.state==='reveal') showRev();
+  else if(S.state==='end') showEnd();
+}
+function renderLobby(){
+  const names = Object.values(players);
+  $('hpin').textContent = pin;
+  $('hcount').textContent = names.length;
+  $('hnames').innerHTML = names.map(p=>'<span>'+esc(p.name)+'</span>').join('');
+}
+function next(){
+  const qi = (S.q===undefined ? -1 : S.q) + 1;
+  if(qi >= Q.length){ base.child('meta').update({state:'end'}); return; }
+  ans = {}; base.child('ans').remove();
+  base.child('meta').set({state:'question', q:qi, n:Q.length, opts:Q[qi].o.length, limit:Q[qi].s, qStart:TS()});
+}
+$('hstart').onclick = () => { if(Object.keys(players).length) next(); };
+$('hnext').onclick = next;
+$('hskip').onclick = () => reveal();
+
+function answered(){ return Object.values(ans).filter(a=>a.q===S.q).length; }
+function updCount(){ $('hqa').textContent = answered()+' of '+Object.keys(players).length+' answered'; }
+function showQ(){
+  show('hq'); const q = Q[S.q];
+  $('hqn').textContent = 'Question '+(S.q+1)+' of '+S.n;
+  $('hqt').textContent = q.t;
+  $('hqo').innerHTML = q.o.map((o,i)=>'<div class="t c'+i+'"><b>'+SH[i]+'</b>'+esc(o)+'</div>').join('');
+  updCount(); tick();
+}
+function tick(){
+  if(isHost){
+    if(S.state!=='question' || !S.qStart) return;
+    const left = Math.max(0, S.limit-(now()-S.qStart)/1000);
+    $('hqc').textContent = Math.ceil(left);
+    const all = Object.keys(players).length;
+    if(left<=0 || (all && answered()>=all)) reveal();
+  } else if(S.state==='question' && S.qStart && mine.q!==S.q){
+    const left = Math.max(0, S.limit-(now()-S.qStart)/1000);
+    $('pc').textContent = Math.ceil(left);
+    if(left<=0) msg("Time's up", 'Wait for the results.');
+  }
+}
+async function reveal(){
+  if(busy || S.state!=='question') return; busy = true;
+  const q = Q[S.q], upd = {};
+  Object.keys(players).forEach(id => {
+    const a = ans[id], p = players[id], valid = a && a.q===S.q;
+    let ok=false, pts=0;
+    if(valid){
+      ok = a.a===q.c;
+      const f = Math.min(1, Math.max(0, (a.t-S.qStart)/(q.s*1000)));
+      if(ok && f<1.1) pts = Math.round(1000*(1-f/2));
+    }
+    p.score = (p.score||0) + pts;
+    p.last = {ok, pts, ans: valid ? a.a : -1};
+  });
+  Object.entries(players).sort((a,b)=>b[1].score-a[1].score).forEach(([id,p],i)=>{
+    p.rank = i+1;
+    upd[id+'/score']=p.score; upd[id+'/last']=p.last; upd[id+'/rank']=p.rank;
+  });
+  await base.child('players').update(upd);
+  await base.child('meta').update({state:'reveal', correct:q.c});
+  busy = false;
+}
+function board(el, n){
+  const top = Object.values(players).sort((a,b)=>b.score-a.score).slice(0,n);
+  el.innerHTML = top.map((p,i)=>'<li><span>'+(i+1)+'. '+esc(p.name)+'</span><b>'+p.score+'</b></li>').join('');
+}
+function showRev(){
+  show('hrev'); const q = Q[S.q], d=[0,0,0,0];
+  Object.values(ans).forEach(a=>{ if(a.q===S.q && a.a<4) d[a.a]++; });
+  $('hro').innerHTML = q.o.map((o,i)=>'<div class="t c'+i+(i===q.c?'':' dim')+'"><b>'+SH[i]+'</b>'+esc(o)+'<em>'+d[i]+'</em></div>').join('');
+  board($('hrl'),5);
+  $('hnext').textContent = S.q+1>=S.n ? 'Final results' : 'Next question';
+}
+function showEnd(){ show('hend'); board($('hel'),5); }
+
+/* ---------- PLAYER ---------- */
+function msg(t,s,tone,x){
+  show('pmsg'); document.body.dataset.tone = tone||'';
+  $('pt').textContent=t||''; $('ps').textContent=s||''; $('px').textContent=x||'';
+}
+
+$('join').onclick = async () => {
+  pin = $('pin').value.trim(); const name = $('nm').value.trim();
+  const err = t => $('jerr').textContent = t;
+  if(!/^\d{6}$/.test(pin)) return err('Enter the 6-digit game PIN.');
+  if(!name) return err('Enter a nickname.');
+  base = db.ref('g/'+pin);
+  if(!(await base.child('meta').once('value')).exists()) return err('No game found with that PIN.');
+  pid = localStorage.getItem('pid'+pin) || db.ref().push().key;
+  localStorage.setItem('pid'+pin, pid);
+  const pr = base.child('players/'+pid);
+  if(!(await pr.once('value')).exists()) await pr.set({name, score:0, rank:0});
+  pr.on('value', s => { me = s.val() || {}; if(S.state==='reveal'||S.state==='end') pRender(); });
+  base.child('meta').on('value', s => { S = s.val() || {}; pRender(); });
+  setInterval(tick, 250);
+};
+
+function pRender(){
+  if(isHost || !S.state) return;
+  if(S.state==='lobby') msg("You're in, "+(me.name||''), 'Your name should appear on the big screen.');
+  else if(S.state==='question'){
+    if(mine.q===S.q) return msg('Answer locked in', 'Waiting for the others…');
+    show('pq');
+    $('pb').className = S.opts===2 ? 'n2' : '';
+    $('pb').innerHTML = Array.from({length:S.opts},(_,i)=>'<button class="c'+i+'" aria-label="Option '+(i+1)+'">'+SH[i]+'</button>').join('');
+    [...$('pb').children].forEach((b,i)=> b.onclick = () => {
+      if(now()-S.qStart > S.limit*1000+800) return;
+      mine = {q:S.q, a:i};
+      base.child('ans/'+pid).set({q:S.q, a:i, t:TS()});
+      msg('Answer locked in', 'Waiting for the others…');
+    });
+    tick();
+  }
+  else if(S.state==='reveal'){
+    const l = me.last || {};
+    msg(l.ok ? 'Correct!' : (l.ans<0 ? 'Out of time' : 'Not this time'),
+        l.ok ? '+'+l.pts+' points' : 'Right answer: '+SH[S.correct],
+        l.ok ? 'ok' : 'bad',
+        'Rank '+me.rank+' · '+me.score+' points');
+  }
+  else if(S.state==='end') msg('Game over', 'You finished #'+me.rank+' with '+me.score+' points');
+}
+</script>
+</body>
+</html>
